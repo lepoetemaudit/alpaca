@@ -688,6 +688,20 @@ defn_test_() ->
                    parse(mlfe_scanner:scan("add x y = x + y")))
     ].
 
+infix_defn_test_() ->
+    [
+     ?_assertMatch({ok, #mlfe_fun_def{name={symbol, 1, "<*>"},
+                                      infix=true,
+                                      args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
+                                      body=#mlfe_apply{
+                                              type=undefined,
+                                              name={bif, '+', 1, erlang, '+'},
+                                              args=[{symbol, 1, "x"},
+                                                    {symbol, 1, "y"}]}}},
+                   parse(mlfe_scanner:scan("(<*>) x y = x + y")))
+    ].
+
+
 float_math_test_() ->
     [?_assertMatch({ok, #mlfe_apply{name={bif, '+', 1, erlang, '+'}}},
                    parse(mlfe_scanner:scan("2 + 1"))),

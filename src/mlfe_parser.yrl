@@ -35,7 +35,7 @@ record_type_member record_type_members record_type
 
 term terms
 unit tuple tuple_list
-defn binding
+defn defn_infix infixable infixable_list infix_sym binding
 module_def export_def export_list fun_and_arity
 match_clause match_clauses match_with match_pattern
 
@@ -360,8 +360,20 @@ spawn_pid -> spawn symbol terms:
               function='$2',
               args='$3'}.
 
+defn_infix -> '(' infixable ')' terms assign simple_expr : 
+  make_define([{infix, '$2'}] ++ '$4', '$6').
+
 defn -> terms assign simple_expr : make_define('$1', '$3').
 binding -> let defn in simple_expr : make_binding('$2', '$4').
+
+infixable -> infixable_list : string:join('$1', "").
+
+infixable_list -> infix_sym : ['$1'].
+infixable_list -> infix_sym infixable_list : ['$1'] ++ '$2'.
+
+infix_sym -> lt : "<".
+infix_sym -> gt : ">".
+infix_sym -> int_math : extract_token('$1').
 
 ffi_call -> beam atom atom cons with match_clauses:
   #mlfe_ffi{module='$2',
@@ -417,6 +429,7 @@ expr -> module_def : '$1'.
 expr -> export_def : '$1'.
 expr -> type_import : '$1'.
 expr -> defn : '$1'.
+expr -> defn_infix : '$1'.
 
 Erlang code.
 -include("mlfe_ast.hrl").
@@ -449,10 +462,24 @@ make_infix(Op, A, B) ->
 make_define([{symbol, _, _} = Name|A], Expr) ->
     case validate_args(A) of
         {ok, Args} ->
+            
             #mlfe_fun_def{name=Name, args=Args, body=Expr};
         {error, _} = E ->
             E
     end;
+
+make_define([{infix, Name} | A], Expr) ->
+    case validate_args(A) of
+        {ok, Args} ->
+            #mlfe_fun_def{name={symbol, 1, Name}, 
+                          args=Args, 
+                          body=Expr, 
+                          infix=true};
+
+        {error, _} = E ->
+            E
+    end;
+
 make_define([BadName|Args], _Expr) ->
     {error, {invalid_function_name, BadName, Args}}.
 
@@ -502,3 +529,5 @@ add_qualifier(#mlfe_bits{}=B, {bin_text_encoding, Enc}) ->
     B#mlfe_bits{type=list_to_atom(Enc)};
 add_qualifier(#mlfe_bits{}=B, {bin_sign, _, S}) ->
     B#mlfe_bits{sign=list_to_atom(S)}.
+
+extract_token({_Token, _Line, Value}) -> Value.
