@@ -28,8 +28,9 @@ parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
+    CurriedFuns = curry_funs(Funs),
     TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
-    {ok, M#alpaca_module{functions=OrderedFuns,
+    {ok, M#alpaca_module{functions=CurriedFuns,
                        types = TypesWithModule}};
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
@@ -69,6 +70,53 @@ group_funs(Funs, ModuleName) ->
               #alpaca_fun_def{name={symbol, L, N}, arity=A, versions=NewVs}
       end, 
       OrderedKeys).
+
+gen_curried_funs(#alpaca_fun_def{
+        name=Name, versions=[#alpaca_fun_version{args=Args}]}=Fun, Acc) ->
+
+    case length(Acc) =:= length(Args) - 1 of 
+        true -> Acc;
+        _ -> 
+            %% number of args in this variant
+            Arity = length(Acc) + 1,
+            %% Grab the partal arglist
+            {ArgList, CurryArgs} = lists:split(Arity, Args),
+            CurriedVersion = #alpaca_fun_version{
+                args=ArgList,
+                body=#fun_binding{
+                    def=#alpaca_fun_def{
+                        name={symbol, 9999, "curry"},
+                        arity=length(CurryArgs),
+                        versions=[#alpaca_fun_version{
+                            line=9999,
+                            args=CurryArgs,
+                            body=#alpaca_apply{
+                                type=undefined,
+                                expr=Name,
+                                args=ArgList ++ CurryArgs
+                            }
+                        }]
+                    },
+                    expr={symbol, 9999, "curry"}
+                }
+            },
+            CurriedFun = Fun#alpaca_fun_def{arity=Arity, versions=[CurriedVersion]},
+            gen_curried_funs(Fun, [CurriedFun | Acc])
+    end.
+
+gen_curried_funs(Fun) ->
+    gen_curried_funs(Fun, []).
+
+curry_funs(Funs) ->
+    lists:foldl(fun(#alpaca_fun_def{name=Name, arity=Arity, versions=Versions}=Fun, Acc) ->
+        case Arity of
+            0 -> [Fun | Acc];
+            1 -> [Fun | Acc];
+            _ -> 
+                CurriedFuns = gen_curried_funs(Fun),
+                CurriedFuns ++ [Fun | Acc]
+        end
+    end, [], Funs).
 
 drop_dupes_preserve_order([], Memo) ->
     lists:reverse(Memo);
@@ -1316,4 +1364,34 @@ rebinding_test_() ->
 type_expr_in_type_declaration_test() ->
     ?assertMatch({error, _}, test_parse("type a not_a_var = A not_a_var")).
 
+gen_curry_funs_def_test() ->
+    %% i.e let my_fun x y = x + y 
+    BaseVersion = #alpaca_fun_version{
+                         args=[{symbol, 1, "x"}, {symbol, 1, "y"}],
+                         body=#alpaca_apply{
+                                type=undefined,
+                                expr={bif, '+', 2, erlang, '+'},
+                                args=[{symbol, 2, "x"},
+                                      {symbol, 2, "y"}]}},
+
+    CurriedVersions = gen_curried_versions({symbol, 1, my_fun}, BaseVersion),
+    ?assertMatch(
+        [#alpaca_fun_version{
+            args=[{symbol, 1, "x"}],
+            body=#fun_binding{
+                def=#alpaca_fun_def{
+                    name={symbol, 9999, "curry"},
+                    versions=[#alpaca_fun_version{
+                        args=[{symbol, 1, "y"}],
+                        body=#alpaca_apply{
+                            type=undefined,
+                            expr={symbol, 1, "my_fun"},
+                            args=[{symbol, 1, "x"}, {symbol, 1, "y"}]
+                        }
+                    }]
+                },
+                expr={symbol, 9999, "curry"}
+            }
+        }],
+        CurriedVersions).
 -endif.
