@@ -371,4 +371,9 @@ export_import_test() ->
     code:delete(M1),
     code:delete(M2).
 
+curry_test() ->
+    [M] = compile_and_load(["test_files/curry.alp"], []),
+    ?assertEqual({16,26}, M:foo(unit)),
+    code:delete(M).
+
 -endif.

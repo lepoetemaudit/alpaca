@@ -293,7 +293,11 @@ gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=Args}) ->
                 undefined ->
                     cerl:c_var(list_to_atom(Name));
                 Arity ->
-                    cerl:c_fname(list_to_atom(Name), Arity)
+                    case length(Args) =:= Arity of
+                        true -> cerl:c_fname(list_to_atom(Name), Arity);
+                        false -> cerl:c_fname(list_to_atom("!!curried!!" ++ Name), Arity)
+                    end
+                        
             end,
     Apply = cerl:c_apply(
               FName, 

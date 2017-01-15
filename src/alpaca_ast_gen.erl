@@ -49,8 +49,9 @@ parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
+    CurriedFuns = curry_funs(Funs),
     TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
-    {ok, M#alpaca_module{functions=OrderedFuns,
+    {ok, M#alpaca_module{functions=CurriedFuns,
                        types = TypesWithModule}};
 parse_module([{break, _}], Mod) ->
     parse_module([], Mod);
@@ -66,6 +67,60 @@ parse_module(Tokens, Mod) ->
                     Err
             end
     end.
+
+curried_name({symbol, Line, Name}) ->
+    CurriedName = "!!curried!!" ++ Name,
+    {symbol, Line, CurriedName}.
+
+gen_curried_funs(#alpaca_fun_def{
+        name=Name, versions=[#alpaca_fun_version{args=Args}]}=Fun, Acc) ->
+
+    case length(Acc) =:= length(Args) - 1 of 
+        true -> Acc;
+        _ -> 
+            %% number of args in this variant
+            Arity = length(Acc) + 1,
+            %% Grab the partal arglist
+            {ArgList, CurryArgs} = lists:split(Arity, Args),
+            CurriedVersion = #alpaca_fun_version{
+                args=ArgList,
+                body=#fun_binding{
+                    def=#alpaca_fun_def{
+                        name={symbol, 9999, "curry"},
+                        arity=length(CurryArgs),
+                        versions=[#alpaca_fun_version{
+                            line=9999,
+                            args=CurryArgs,
+                            body=#alpaca_apply{
+                                type=undefined,
+                                expr=Name,
+                                args=ArgList ++ CurryArgs
+                            }
+                        }]
+                    },
+                    expr={symbol, 9999, "curry"}
+                }
+            },
+            CurriedFun = Fun#alpaca_fun_def{
+                arity=Arity, 
+                versions=[CurriedVersion],
+                name=curried_name(Name)},
+            gen_curried_funs(Fun, [CurriedFun | Acc])
+    end.
+
+gen_curried_funs(Fun) ->
+    gen_curried_funs(Fun, []).
+
+curry_funs(Funs) ->
+    lists:foldl(fun(#alpaca_fun_def{name=Name, arity=Arity, versions=Versions}=Fun, Acc) ->
+        case Arity of
+            0 -> [Fun | Acc];
+            1 -> [Fun | Acc];
+            _ -> 
+                CurriedFuns = gen_curried_funs(Fun),
+                CurriedFuns ++ [Fun | Acc]
+        end
+    end, [], Funs).
 
 %% Rename bindings to account for variable names escaping receive, rewrite
 %% exports that don't specify arity, resolve missing functions with imports.

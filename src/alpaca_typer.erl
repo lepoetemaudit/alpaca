@@ -1592,12 +1592,13 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
     %% later than the application we're trying to type.
     ForwardFun =
         fun() ->
-                FN = case Expr of
-                         {symbol, Line, FunName}    -> FunName;
-                         {bif, FunName, _, _, _} -> FunName
-                     end,
-                Mod = Env#env.current_module,
-                case get_fun(Mod, FN, length(Args)) of
+            FN = case Expr of
+                        {symbol, Line, FunName}    -> FunName;
+                        {bif, FunName, _, _, _} -> FunName
+                    end,
+            Mod = Env#env.current_module,
+            GetFun = fun(FunName) ->
+                case get_fun(Mod, FunName, length(Args)) of
                     {ok, _, Fun} ->
                         case typ_of(Env, Lvl, Fun) of
                             {error, _}=Err -> Err;
@@ -1606,6 +1607,17 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                         end;
                     {error, _} = E -> E
                 end
+            end,
+            case GetFun(FN) of
+                {error, OriginalErr} -> 
+                    %% Try the curried variant
+                    case GetFun("!!curried!!" ++ FN) of
+                        {TypF, NextVar} -> 
+                            {TypF, NextVar};
+                        E -> OriginalErr
+                    end;                                    
+                Other -> Other
+            end
         end,
 
     case typ_of(Env, Lvl, Expr) of
@@ -1623,7 +1635,9 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 typ_apply(Env, Lvl, TypF, NextVar, Args, L)
             catch
                 error:{arity_error, _, _} -> ForwardFun()
-            end
+            end;
+        {TypF, NextVar, curried} ->
+            typ_apply(Env, Lvl, TypF, NextVar, Args, L)
     end;
 
 %% Unify the patterns with each other and resulting expressions with each
