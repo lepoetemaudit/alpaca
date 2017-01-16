@@ -1609,12 +1609,12 @@ typ_of(Env, Lvl, #alpaca_apply{line=L, expr=Expr, args=Args}) ->
                 end
             end,
             case GetFun(FN) of
-                {error, OriginalErr} -> 
+                {error, _} = OriginalErr -> 
                     %% Try the curried variant
-                    case GetFun("!!curried!!" ++ FN) of
-                        {TypF, NextVar} -> 
-                            {TypF, NextVar};
-                        E -> OriginalErr
+                    case GetFun("!!curried!!" ++ FN) of                           
+                        {error, _} -> OriginalErr;
+                        {TypF, NextVar} ->                                                         
+                            {TypF, NextVar}                    
                     end;                                    
                 Other -> Other
             end

@@ -80,8 +80,19 @@ gen_curried_funs(#alpaca_fun_def{
         _ -> 
             %% number of args in this variant
             Arity = length(Acc) + 1,
+            %% Prefix the args, so we don't trip up uses of _
+            RenamedArgs = lists:map(
+                fun({symbol, L, Name}) ->
+                    {symbol, L, "c" ++ Name};
+                
+                   ({alpaca_type_apply, undefined, N, {'_', L}}) ->
+                        {alpaca_type_apply, undefined, N, {symbol, L, "c_"}};
+                   (Other) -> Other
+                end,
+                
+                Args),
             %% Grab the partal arglist
-            {ArgList, CurryArgs} = lists:split(Arity, Args),
+            {ArgList, CurryArgs} = lists:split(Arity, RenamedArgs),
             CurriedVersion = #alpaca_fun_version{
                 args=ArgList,
                 body=#fun_binding{
