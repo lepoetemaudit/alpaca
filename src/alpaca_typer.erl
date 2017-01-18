@@ -2413,6 +2413,19 @@ top_typ_with_types(Code, ADTs) ->
                    type_constructors=constructors(ADTs)},
            E).
 
+%% The curried funs add a lot of noise to modules, in some cases we
+%% just want to filter them out.
+filter_curries({ok, #alpaca_module{functions=Funs} = Mod}) ->
+    FilteredFuns = lists:filter(
+        fun(#alpaca_fun_def{name = {symbol, _, Name}}) ->
+            case Name of
+                "!!curried!!" ++ _ -> false;
+                _ -> true
+            end
+        end, Funs),    
+    {ok, Mod#alpaca_module{functions=FilteredFuns}}.
+
+
 %% There are a number of expected "unbound" variables here.  I think this
 %% is due to the deallocation problem as described in the first post
 %% referenced at the top.
@@ -4255,7 +4268,7 @@ constrain_polymorphic_adt_funs_test_() ->
                                         [t_unit],
                                         #adt{vars=[{"a", t_int}]}}}]
                    }},
-                 module_typ_and_parse(Code))
+                filter_curries(module_typ_and_parse(Code)))
       end
     ].
 

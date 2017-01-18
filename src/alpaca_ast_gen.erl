@@ -49,7 +49,7 @@ parse_module([], #alpaca_module{name=no_module}) ->
     {error, no_module_defined};
 parse_module([], #alpaca_module{name=N, functions=Funs, types=Ts}=M) ->
     OrderedFuns = group_funs(Funs, N),
-    CurriedFuns = curry_funs(Funs),
+    CurriedFuns = curry_funs(OrderedFuns),
     TypesWithModule = [T#alpaca_type{module=N} || T <- Ts],
     {ok, M#alpaca_module{functions=CurriedFuns,
                        types = TypesWithModule}};
@@ -72,21 +72,23 @@ curried_name({symbol, Line, Name}) ->
     CurriedName = "!!curried!!" ++ Name,
     {symbol, Line, CurriedName}.
 
-gen_curried_funs(#alpaca_fun_def{
-        name=Name, versions=[#alpaca_fun_version{args=Args}]}=Fun, Acc) ->
+gen_curried_funs(
+        #alpaca_fun_def{name=Name, 
+                        versions=[#alpaca_fun_version{args=Args} | _]}=Fun, 
+        Min,
+        Arity,
+        Acc) ->
 
-    case length(Acc) =:= length(Args) - 1 of 
-        true -> Acc;
+    case Arity > Min of 
+        false -> Acc;
         _ -> 
-            %% number of args in this variant
-            Arity = length(Acc) + 1,
             %% Prefix the args, so we don't trip up uses of _
             RenamedArgs = lists:map(
                 fun({symbol, L, Name}) ->
-                    {symbol, L, "c" ++ Name};
+                    {symbol, L, "syn_" ++ Name};
                 
                    ({alpaca_type_apply, undefined, N, {'_', L}}) ->
-                        {alpaca_type_apply, undefined, N, {symbol, L, "c_"}};
+                        {alpaca_type_apply, undefined, N, {symbol, L, "syn_"}};
                    (Other) -> Other
                 end,
                 
@@ -116,22 +118,56 @@ gen_curried_funs(#alpaca_fun_def{
                 arity=Arity, 
                 versions=[CurriedVersion],
                 name=curried_name(Name)},
-            gen_curried_funs(Fun, [CurriedFun | Acc])
+            gen_curried_funs(Fun, Min, Arity-1, [CurriedFun | Acc])
     end.
 
-gen_curried_funs(Fun) ->
-    gen_curried_funs(Fun, []).
+gen_curried_funs(#alpaca_fun_def{arity=MaxArity}=Fun, 
+                 #alpaca_fun_def{arity=MinArity}) ->
+    case MaxArity of
+        i when i < 2 -> [];
+        _ -> gen_curried_funs(Fun, MinArity, MaxArity-1, [])
+    end.
+
+gen_curried_funs(#alpaca_fun_def{arity=MaxArity}=Fun) ->
+    case MaxArity of
+        i when i < 2 -> [];
+        _ -> gen_curried_funs(Fun, 0, MaxArity-1, [])
+    end.
 
 curry_funs(Funs) ->
-    lists:foldl(fun(#alpaca_fun_def{name=Name, arity=Arity, versions=Versions}=Fun, Acc) ->
-        case Arity of
-            0 -> [Fun | Acc];
-            1 -> [Fun | Acc];
-            _ -> 
-                CurriedFuns = gen_curried_funs(Fun),
-                CurriedFuns ++ [Fun | Acc]
+    % Regroup all the funs by name    
+    GroupedFuns = lists:foldl(
+        fun(#alpaca_fun_def{name={_, _, Name}}=Fun, 
+            [[#alpaca_fun_def{name={_, _, Name2}} | _] = HeadFuns | Rest]) ->
+                case Name =:= Name2 of
+                    true -> 
+                        [[Fun | HeadFuns] | Rest];
+                    false -> 
+                        [[Fun] | [HeadFuns | Rest]]
+                end;
+        (Fun, _) -> [[Fun]]
+        end, [], Funs),    
+    % Sort each function group by arity (descending) 
+    SortByArity = 
+        fun(#alpaca_fun_def{arity = Arity1}, 
+            #alpaca_fun_def{arity = Arity2}) ->
+            Arity1 > Arity2
+        end,
+    SortedFuns = 
+        lists:map(
+            fun(FunGroup) -> 
+                %%io:format("Fun group: ~p~n", [FunGroup]),
+                lists:sort(SortByArity, FunGroup)
+            end,
+            GroupedFuns),
+    
+    CurriedFuns = lists:foldl(fun(FunGroup, Acc) ->
+        case FunGroup of
+            [Fun] -> gen_curried_funs(Fun) ++ Acc;
+            [Fun, Fun2 | _] -> gen_curried_funs(Fun, Fun2) ++ Acc
         end
-    end, [], Funs).
+    end, [], SortedFuns),
+    Funs ++ CurriedFuns.
 
 %% Rename bindings to account for variable names escaping receive, rewrite
 %% exports that don't specify arity, resolve missing functions with imports.
@@ -946,6 +982,19 @@ next_var(X) ->
 
 -ifdef(TEST).
 
+%% The curried funs add a lot of noise to modules, in some cases we
+%% just want to filter them out.
+filter_curries(#alpaca_module{functions=Funs} = Mod) ->
+    io:format("I'm filtering~n"),
+    FilteredFuns = lists:filter(
+        fun(#alpaca_fun_def{name = {symbol, _, Name}}) ->
+            case Name of
+                "!!curried!!" ++ _ -> false;
+                _ -> true
+            end
+        end, Funs),    
+    Mod#alpaca_module{functions=FilteredFuns}.
+
 test_parse(S) ->
     parse(alpaca_scanner:scan(S)).
 
@@ -1332,7 +1381,7 @@ module_with_let_test() ->
                                                       expr={symbol,7,"svar_2"},
                                                       args=[{symbol,7,"svar_0"},
                                                             {symbol,7,"svar_1"}]}}}]}]}],
-       make_modules([Code])).
+        lists:map(fun filter_curries/1, make_modules([Code]))).
 
 match_test_() ->
     [?_assertMatch(
@@ -1550,7 +1599,7 @@ simple_module_test() ->
                                                        expr={bif, '-', 11, erlang, '-'},
                                                        args=[{symbol,11,"svar_5"},
                                                              {symbol,11,"svar_6"}]}}]}]}],
-       make_modules([Code])).
+        lists:map(fun filter_curries/1, make_modules([Code]))).
 
 break_test() ->
     % We should tolerate whitespace between the two break tokens
@@ -1737,6 +1786,7 @@ import_rewriting_test_() ->
                  "let f () = add 2 3",
              ?assertMatch(
                 [#alpaca_module{name=a},
+                
                  #alpaca_module{
                     name=b,
                     functions=[#alpaca_fun_def{
@@ -1748,7 +1798,7 @@ import_rewriting_test_() ->
                                                                arity=2}
                                                       }}]
                                  }]}],
-                make_modules([Code1, Code2]))
+             lists:map(fun filter_curries/1, make_modules([Code1, Code2])))
      end
     , fun() ->
               Code1 =
@@ -1774,7 +1824,40 @@ import_rewriting_test_() ->
                                                                 arity=2}
                                                        }}]
                                   }]}],
-                 make_modules([Code1, Code2]))
+                lists:map(fun filter_curries/1, make_modules([Code1, Code2])))
       end
     ].
+
+currying_test_() ->
+    [fun() ->
+             Code = 
+                "module curry\n\n"           
+                "let f x y z = x + y + z\n\n",
+             ?assertMatch(
+                [#alpaca_module{
+                    name=curry,
+                    functions=[
+                        #alpaca_fun_def{name={symbol, 3, "f"}, arity=3},
+                        #alpaca_fun_def{name={symbol, 3, "!!curried!!f"}, arity=1},
+                        #alpaca_fun_def{name={symbol, 3, "!!curried!!f"}, arity=2}
+                    ]}],
+                make_modules([Code]))
+    end,
+    fun() ->
+            Code = 
+              "module curry\n\n"           
+              "let f x y z = x + y + z\n"
+              "let f x y = x + y\n",
+              ?assertMatch(
+                [#alpaca_module{
+                    name=curry,
+                    functions=[
+                        #alpaca_fun_def{name={symbol, 3, "f"}, arity=3},
+                        #alpaca_fun_def{name={symbol, 4, "f"}, arity=2}
+                    ]}],
+                make_modules([Code]))
+    end
+].
+
+
 -endif.
