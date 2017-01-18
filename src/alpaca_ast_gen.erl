@@ -93,8 +93,13 @@ gen_curried_funs(
                 end,
                 
                 Args),
-            %% Grab the partal arglist
+            %% Grab the partial arglist
             {ArgList, CurryArgs} = lists:split(Arity, RenamedArgs),
+            RenamedCurryArgs =
+                lists:map(fun(I) -> 
+                                {symbol, 9999, "curry_arg_" ++ integer_to_list(I)}
+                          end, 
+                          lists:seq(1, length(CurryArgs))),
             CurriedVersion = #alpaca_fun_version{
                 args=ArgList,
                 body=#fun_binding{
@@ -103,11 +108,11 @@ gen_curried_funs(
                         arity=length(CurryArgs),
                         versions=[#alpaca_fun_version{
                             line=9999,
-                            args=CurryArgs,
+                            args=RenamedCurryArgs,
                             body=#alpaca_apply{
                                 type=undefined,
                                 expr=Name,
-                                args=ArgList ++ CurryArgs
+                                args=ArgList ++ RenamedCurryArgs
                             }
                         }]
                     },
@@ -155,8 +160,7 @@ curry_funs(Funs) ->
         end,
     SortedFuns = 
         lists:map(
-            fun(FunGroup) -> 
-                %%io:format("Fun group: ~p~n", [FunGroup]),
+            fun(FunGroup) ->                 
                 lists:sort(SortByArity, FunGroup)
             end,
             GroupedFuns),
@@ -985,7 +989,6 @@ next_var(X) ->
 %% The curried funs add a lot of noise to modules, in some cases we
 %% just want to filter them out.
 filter_curries(#alpaca_module{functions=Funs} = Mod) ->
-    io:format("I'm filtering~n"),
     FilteredFuns = lists:filter(
         fun(#alpaca_fun_def{name = {symbol, _, Name}}) ->
             case Name of
