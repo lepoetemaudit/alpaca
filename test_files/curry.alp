@@ -7,12 +7,13 @@ let (|>) x f = f x
 let non_curry x =
   x + x
 
--- add : int -> int -> int
 let add x y = 
   x + y
 
--- foo : () -> (int, int)
+let whatever i a =
+  i
+
 let foo () =
   let adder = add 6 in
-  (6 |> add 5 |> add 5, adder 20)
+  (whatever 6 "yeh" |> add 5 |> add 5, adder 20)
 

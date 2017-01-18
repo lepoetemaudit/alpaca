@@ -2638,7 +2638,7 @@ module_typing_test() ->
                                              [{t_list, {unbound, A, _}}],
                                              {unbound, A, _}}}
                                    ]}},
-                 type_module(M, new_env())).
+            filter_curries(type_module(M, new_env()))).
 
 module_with_forward_reference_test() ->
     Code =
@@ -2658,7 +2658,7 @@ module_with_forward_reference_test() ->
                           #alpaca_fun_def{
                              name={symbol, 7, "adder"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
-       type_module(M, Env#env{current_module=M, modules=[M]})).
+        filter_curries(type_module(M, Env#env{current_module=M, modules=[M]}))).
 
 simple_inter_module_test() ->
     Mod1 =
@@ -2680,7 +2680,7 @@ simple_inter_module_test() ->
                           #alpaca_fun_def{
                              name={symbol, 3, "add"},
                              type={t_arrow, [t_int, t_int], t_int}}]}},
-       type_module(M1, Env)).
+        filter_curries(type_module(M1, Env))).
 
 bidirectional_module_fail_test() ->
     Mod1 =
@@ -4145,7 +4145,7 @@ function_argument_pattern_test_() ->
                                                 [{unbound, A, _}],
                                                 {unbound, B, _}}],
                                               #adt{vars=[{_, {unbound, B, _}}]}}}]}},
-                  module_typ_and_parse(Code))
+                filter_curries(module_typ_and_parse(Code)))
        end
     , fun() ->
               Code =
@@ -4163,7 +4163,7 @@ function_argument_pattern_test_() ->
                                                {unbound, B, _}},
                                               #adt{vars=[{_, {unbound, A, _}}]}],
                                              #adt{vars=[{_, {unbound, B, _}}]}}}]}},
-                 module_typ_and_parse(Code))
+                filter_curries(module_typ_and_parse(Code)))
       end
     ].
 
