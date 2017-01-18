@@ -289,13 +289,14 @@ gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=[{unit, _}]}) ->
             end,
     {Env, cerl:c_apply(FName, [cerl:c_atom(unit)])};
 gen_expr(Env, #alpaca_apply{expr={symbol, _Line, Name}, args=Args}) ->
-    FName = case proplists:get_value(Name, Env#env.module_funs) of
-                undefined ->
+
+    FName = case proplists:get_all_values(Name, Env#env.module_funs) of
+                [] ->
                     cerl:c_var(list_to_atom(Name));
-                Arity ->
-                    case length(Args) =:= Arity of
-                        true -> cerl:c_fname(list_to_atom(Name), Arity);
-                        false -> cerl:c_fname(list_to_atom("!!curried!!" ++ Name), Arity)
+                Arities  ->
+                    case lists:filter(fun(X) -> X =:= length(Args) end, Arities) of                        
+                        [] -> cerl:c_fname(list_to_atom("!!curried!!" ++ Name), length(Args));
+                        _ -> cerl:c_fname(list_to_atom(Name), length(Args))
                     end
                         
             end,
