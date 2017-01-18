@@ -13,7 +13,25 @@ let add x y =
 let whatever i a =
   i
 
+let filter_ pred l acc =
+  match l with
+      [] -> acc
+    | hd :: tail ->
+        match pred hd with
+            true  -> filter_ pred tail hd :: acc
+          | false -> filter_ pred tail acc
+
+let filter pred l =
+  filter_ pred l []
+
+let eq a b =
+  a == b
+
+let filtered_list () =    
+  [1, 2, 3]
+  |> filter (eq 2)
+
 let foo () =
   let adder = add 6 in
-  (whatever 6 "yeh" |> add 5 |> add 5, adder 20)
+  (whatever 6 "yeh" |> add 5 |> add 5, adder 20, filtered_list ())
 

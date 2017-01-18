@@ -373,7 +373,7 @@ export_import_test() ->
 
 curry_test() ->
     [M] = compile_and_load(["test_files/curry.alp"], []),
-    ?assertEqual({16,26}, M:foo(unit)),
+    ?assertEqual({16,26,[2]}, M:foo(unit)),
     code:delete(M).
 
 -endif.
